@@ -2,10 +2,12 @@ package Date::Japanese::Era;
 
 use strict;
 use vars qw($VERSION);
-$VERSION = '0.01';
+$VERSION = '0.02';
 
 use Carp;
-use Date::Japanese::Era::Table;
+use constant END_OF_LUNAR => 1872;
+
+use vars qw(@ISA @EXPORT %ERA_TABLE %ERA_JA2ASCII %ERA_ASCII2JA);
 
 use vars qw($Have_Jcode);
 BEGIN {
@@ -23,6 +25,19 @@ BEGIN {
 	    $codeset = shift;
 	}
 	$codeset;
+    }
+}
+
+sub import {
+    my $self = shift;
+    if (@_) {
+	my $table = shift;
+	eval qq{use Date::Japanese::Era::Table::$table};
+	die $@ if $@;
+    }
+    else {
+	require Date::Japanese::Era::Table;
+	import Date::Japanese::Era::Table;
     }
 }
 
@@ -48,6 +63,10 @@ sub new {
 
 sub _from_ymd {
     my($self, @ymd) = @_;
+
+    if ($ymd[0] <= END_OF_LUNAR) {
+	Carp::carp("In $ymd[0] they didn't use gregorious date.");
+    }
 
     require Date::Calc;		# not 'use'
     *Delta_Days = \&Date::Calc::Delta_Days;
@@ -149,6 +168,10 @@ Date::Japanese::Era - Conversion between Japanese Era / Gregorian calendar
   $year      = $era->year;	   # 52
   $gregorian = $era->gregorian_year;  	   # 1977
 
+  # use JIS X0301 table for conversion
+  use Date::Japanese::Era 'JIS_X0301';
+
+
 =head1 DESCRIPTION
 
 Date::Japanese::Era handles conversion between Japanese Era and
@@ -157,6 +180,22 @@ Gregorian calendar.
 =head1 METHODS
 
 =over 4
+
+=item codeset
+
+  $codeset = Date::Japanese::Era->codeset;
+  Date::Japanese::Era->codeset($encoding);
+
+sets / gets external encoding of Japanese era names. For example with
+the following code, input and output of era names are encoded in UTF-8.
+
+  Date::Japanese::Era->codeset('utf8');
+  $era = Date::Japanese::Era->new($name, $year); # $name is UTF-8
+  print $era->name;                              # also UTF-8
+
+You need Jcode module installed to make use of this
+feature. Otherwise, calls to codeset() are simply ignored (with
+warning).
 
 =item new
 
@@ -172,21 +211,7 @@ specified via codeset(), suppose you have Jcode module
 installed. Default is EUC-JP.
 
 Exceptions are thrown when inputs are invalid (e.g: non-existent
-era-name and year combination, unknwon era-name, etc.).
-
-=item codeset
-
-  $codeset = Date::Japanese::Era->codeset;
-  Date::Japanese::Era->codeset($encoding);
-
-sets / gets external encoding of Japanese era names. For example with
-the follwing code, input and output of era names are encoded in UTF-8.
-
-  Date::Japanese::Era->codeset('utf8');
-  $era = Date::Japanese::Era->new($name, $year); # $name is UTF-8
-  print $era->name;                              # also UTF-8
-
-You need Jcode module installed to make use of this feature.
+era name and year combination, unknwon era-name, etc.).
 
 =item name
 
@@ -221,13 +246,15 @@ returns year as Gregorian.
 
 =head1 EXAMPLES
 
+  use Date::Japanese::Era;
+
   # 2001 is H-13
   my $era = Date::Japanese::Era->new(2001, 8, 31);
   printf "%s-%s", uc(substr($era->name_ascii, 0, 1)), $era->year;
 
   # to Gregorian
   my $era = Date::Japanese::Era->new('Ê¿À®', 13);
-  print $era->gregorian_year;
+  print $era->gregorian_year;	# 2001
 
 =head1 CAVEATS
 
@@ -235,17 +262,29 @@ returns year as Gregorian.
 
 =item *
 
-The day era just changed is handled as newer one.
+Currently supported era is up to 'meiji'. And before Meiji 05.12.02,
+gregorius calendar was not used there, but lunar calendar was. This
+module does not support lunar calendar, but gives warnings in such
+cases ("In %d they didn't use gregorius calendar").
 
 =item *
 
-Currently supported era is up to 'meiji'.
+There should be discussion how we handle the exact day the era has
+changed (former one or latter one?). This module default handles the
+day as newer one, but you can change so that it sticks to JIS table
+(older one) by saying:
+
+  use Date::Japanese::Era 'JIS_X0301';
+
+For example, 1912-07-30 is handled as:
+
+  default	Taishou 1 07-30
+  JIS_X0301	Meiji 45 07-30
 
 =item *
 
-If someday current era (heisei) is changed, Date::Japanese::Era should
-be upgraded. (Table is declared as global variable, so you can
-overwrite it if necessary).
+If someday current era (heisei) is changed, Date::Japanese::Era::Table
+should be upgraded.
 
 =back
 
@@ -260,7 +299,7 @@ Date::Simple or whatever for that.
 
 =item *
 
-Support earlier eras.
+Support earlier eras and lunar calendar.
 
 =back
 
